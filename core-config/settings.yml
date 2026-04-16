@@ -1,0 +1,11 @@
+use_default_settings: true
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "searxng_mcp_secret_123456789" # Change this to a strong, random value in production!
+  limiter: false
+  image_proxy: true

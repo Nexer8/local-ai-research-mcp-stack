@@ -1,0 +1,60 @@
+# Integrated Docker Compose for SearXNG, Crawl4AI, and Llama.cpp
+name: llm-research-stack
+
+services:
+  # 1. SearXNG Search Engine
+  searxng:
+    container_name: searxng-core
+    image: docker.io/searxng/searxng:latest
+    restart: always
+    ports:
+      - "${SEARXNG_PORT:-8081}:8080" # Exposing internally on 8080, externally on the defined port
+    volumes:
+      - ./core-config/:/etc/searxng/:Z
+      - core-data:/var/cache/searxng/
+    depends_on:
+      - valkey
+
+  valkey:
+    container_name: searxng-valkey
+    image: docker.io/valkey/valkey:9-alpine
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: always
+    volumes:
+      - valkey-data:/data/
+
+  # 2. Crawl4AI
+  crawl4ai:
+    container_name: crawl4ai
+    image: unclecode/crawl4ai:latest
+    restart: always
+    ports:
+      - "${CRAWL4AI_PORT:-8082}:11235"
+    shm_size: '1g'
+
+  # Llama.cpp Server is run locally on the host machine to utilize Metal GPU acceleration.
+  # Start it manually with: llama-server -hf ggml-org/gemma-4-26B-A4B-it-GGUF --port 8080
+
+  # 4. MCP Proxy for SearXNG
+  mcp-searxng:
+    container_name: mcp-searxng
+    image: node:22-bookworm
+    restart: always
+    ports:
+      - "${MCP_SEARXNG_PORT:-8083}:8001"
+    command: >
+      bash -c "curl -LsSf https://astral.sh/uv/install.sh | sh && /root/.local/bin/uvx mcp-proxy --host 0.0.0.0 --port 8001 --allow-origin '*' --stateless --pass-environment --named-server searxng 'env SEARXNG_URL=http://searxng:8080 npx -y mcp-searxng'"
+
+  # 5. MCP Proxy for Crawl4AI
+  mcp-crawl4ai:
+    container_name: mcp-crawl4ai
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    restart: always
+    ports:
+      - "${MCP_CRAWL4AI_PORT:-8084}:8010"
+    command: >
+      bash -c "uvx mcp-proxy --host 0.0.0.0 --port 8010 --allow-origin '*' --stateless --named-server crawl4ai 'uvx mcp-proxy --transport sse http://crawl4ai:11235/mcp/sse'"
+
+volumes:
+  core-data:
+  valkey-data:
